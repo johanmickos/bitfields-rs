@@ -1,0 +1,6 @@
+[package]
+name = "bitfields"
+version = "0.1.0"
+authors = ["Johan Mickos <johan.mickos@gmail.com>"]
+
+[dependencies]
