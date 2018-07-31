@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::mem;
 
-type StorageType = u32;
+pub type StorageType = u32;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -15,35 +15,43 @@ pub enum Error {
     TryFromError,
 }
 
+#[derive(Debug)]
 struct BitField {
     pos: StorageType,
     width: StorageType,
 }
 /// A set of bit fields
+#[derive(Debug)]
 pub struct BitFieldSet {
     /// Total number of bits spanned by this set
-    num_bits: usize,
+    num_bits: u32,
     storage: StorageType, // TODO support wider types
-    entries: HashMap<StorageType, BitField>,
+    entries: HashMap<u32, BitField>,
 }
 
 impl BitFieldSet {
-    pub fn new(num_bits: usize) -> Result<Self, Error> {
-        let supported_bits = mem::size_of::<StorageType>() * 8;
+    /// Creates a new [BitFieldSet] supporting at most `num_bits` internal bits.
+    pub fn new(num_bits: u32) -> Result<Self, Error> {
+        let supported_bits = (mem::size_of::<StorageType>() * 8) as u32;
         if num_bits > supported_bits {
             return Err(Error::OutOfBounds);
         }
         Ok(BitFieldSet {
-            num_bits: supported_bits,
+            num_bits,
             storage: 0,
             entries: HashMap::new(),
         })
     }
 
     /// Creates an associative [BitField] entry in this [BitFieldSet]
-    pub fn add(&mut self, pos: StorageType, width: StorageType) -> Result<(), Error> {
-        if pos > self.num_bits as StorageType {
+    pub fn add(&mut self, pos: u32, width: u32) -> Result<(), Error> {
+        // TODO leverage same OOB checks as `insert`
+        if pos > self.num_bits {
             return Err(Error::OutOfBounds);
+        }
+        self.check_overflow(width, pos)?;
+        if self.entries.contains_key(&pos) {
+            return Err(Error::WouldOverlap);
         }
         self.entries.insert(pos, BitField { pos, width });
         Ok(())
@@ -52,17 +60,17 @@ impl BitFieldSet {
     /// Inserts the the data at the provided position and associates its position and width.
     pub fn insert<D: Into<StorageType>>(
         &mut self,
-        pos: StorageType,
-        width: StorageType,
+        pos: u32,
+        width: u32,
         data: D,
     ) -> Result<StorageType, Error> {
         if pos > self.num_bits as StorageType {
             return Err(Error::OutOfBounds);
         }
         let data: StorageType = data.into();
-        let data_too_large = mem::size_of::<D>() > self.num_bits;
-        let data_overflow = (width + pos) > self.num_bits as StorageType;
-        if data_too_large || data_overflow {
+        let data_too_large = (mem::size_of::<D>() as u32) > self.num_bits;
+        self.check_overflow(pos, width)?;
+        if data_too_large {
             return Err(Error::DataTooLarge);
         }
         self.storage |= data << pos;
@@ -83,11 +91,23 @@ impl BitFieldSet {
         let value = self.get(pos).ok_or_else(|| Error::TryFromError)?;
         T::try_from(value).map_err(|_| Error::TryFromError)
     }
+
+    pub fn get_raw(&self) -> StorageType {
+        self.storage
+    }
+
+    fn check_overflow(&self, width: u32, pos: u32) -> Result<(), Error> {
+        if (width + pos) > self.num_bits {
+            Err(Error::OutOfBounds)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl From<StorageType> for BitFieldSet {
     fn from(raw: StorageType) -> Self {
-        let supported_bits = mem::size_of::<StorageType>() * 8;
+        let supported_bits = (mem::size_of::<StorageType>() * 8) as u32;
         BitFieldSet {
             num_bits: supported_bits,
             storage: raw,
@@ -95,6 +115,7 @@ impl From<StorageType> for BitFieldSet {
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -105,6 +126,7 @@ mod tests {
     const PATH_TYPE_POS: StorageType = 7;
     const PROTOCOL_POS: StorageType = 2;
     const ADDRESS_TYPE_POS: StorageType = 0;
+    const RAW_STORAGE: StorageType = 0b10001001;
 
     #[derive(Debug, PartialEq)]
     #[repr(u8)]
@@ -200,8 +222,7 @@ mod tests {
 
     #[test]
     fn from_raw() {
-        let raw: StorageType = 0b10001001;
-        let mut bfs = BitFieldSet::from(raw);
+        let mut bfs = BitFieldSet::from(RAW_STORAGE);
         bfs.add(PATH_TYPE_POS, 1)
             .expect("Data of width 1 should fit inside expected 32 bits");
         bfs.add(PROTOCOL_POS, 5)
@@ -225,5 +246,42 @@ mod tests {
             bfs.get_as::<ProtocolTypes>(PROTOCOL_POS).unwrap(),
             ProtocolTypes::UDP
         );
+    }
+
+    #[test]
+    fn into_raw() {
+        let mut bfs = BitFieldSet::new(8).unwrap();
+        bfs.insert(PATH_TYPE_POS, 1, PathTypes::Unique as u8).unwrap();
+        bfs.insert(PROTOCOL_POS, 5, ProtocolTypes::UDP as u8).unwrap();
+        bfs.insert(ADDRESS_TYPE_POS, 2, AddressTypes::IPv6 as u8).unwrap();
+        let raw = bfs.get_raw();
+        assert_eq!(raw, RAW_STORAGE, "Inserted data should match hardocded expected bits");
+    }
+    #[test]
+    fn truncated_raw() {
+        let mut bfs = BitFieldSet::new(8).unwrap();
+        bfs.insert(PATH_TYPE_POS, 1, PathTypes::Unique as u8).unwrap();
+        bfs.insert(PROTOCOL_POS, 5, ProtocolTypes::UDP as u8).unwrap();
+        bfs.insert(ADDRESS_TYPE_POS, 2, AddressTypes::IPv6 as u8).unwrap();
+        let raw = bfs.get_raw() as u8;
+        assert_eq!(raw as u32, RAW_STORAGE, "Inserted data should match hardocded expected bits");
+    }
+
+    #[test]
+    fn bad_insertion() {
+        let mut bfs = BitFieldSet::new(8).unwrap();
+        // Valid insertion
+        bfs.add(PATH_TYPE_POS, 1).unwrap();
+        // Invalid re-insertion at existing position
+        let res = bfs.add(PATH_TYPE_POS, 1);
+
+        assert_eq!(res, Err(Error::WouldOverlap));
+    }
+
+    #[test]
+    fn out_of_bounds_insertion() {
+        let mut bfs = BitFieldSet::new(8).unwrap();
+        let res = bfs.add(8, 9);
+        assert_eq!(res, Err(Error::OutOfBounds));
     }
 }
