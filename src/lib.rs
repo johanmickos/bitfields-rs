@@ -116,7 +116,6 @@ impl From<StorageType> for BitFieldSet {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{BitFieldSet, Error};
@@ -251,20 +250,32 @@ mod tests {
     #[test]
     fn into_raw() {
         let mut bfs = BitFieldSet::new(8).unwrap();
-        bfs.insert(PATH_TYPE_POS, 1, PathTypes::Unique as u8).unwrap();
-        bfs.insert(PROTOCOL_POS, 5, ProtocolTypes::UDP as u8).unwrap();
-        bfs.insert(ADDRESS_TYPE_POS, 2, AddressTypes::IPv6 as u8).unwrap();
+        bfs.insert(PATH_TYPE_POS, 1, PathTypes::Unique as u8)
+            .unwrap();
+        bfs.insert(PROTOCOL_POS, 5, ProtocolTypes::UDP as u8)
+            .unwrap();
+        bfs.insert(ADDRESS_TYPE_POS, 2, AddressTypes::IPv6 as u8)
+            .unwrap();
         let raw = bfs.get_raw();
-        assert_eq!(raw, RAW_STORAGE, "Inserted data should match hardocded expected bits");
+        assert_eq!(
+            raw, RAW_STORAGE,
+            "Inserted data should match hardocded expected bits"
+        );
     }
     #[test]
     fn truncated_raw() {
         let mut bfs = BitFieldSet::new(8).unwrap();
-        bfs.insert(PATH_TYPE_POS, 1, PathTypes::Unique as u8).unwrap();
-        bfs.insert(PROTOCOL_POS, 5, ProtocolTypes::UDP as u8).unwrap();
-        bfs.insert(ADDRESS_TYPE_POS, 2, AddressTypes::IPv6 as u8).unwrap();
+        bfs.insert(PATH_TYPE_POS, 1, PathTypes::Unique as u8)
+            .unwrap();
+        bfs.insert(PROTOCOL_POS, 5, ProtocolTypes::UDP as u8)
+            .unwrap();
+        bfs.insert(ADDRESS_TYPE_POS, 2, AddressTypes::IPv6 as u8)
+            .unwrap();
         let raw = bfs.get_raw() as u8;
-        assert_eq!(raw as u32, RAW_STORAGE, "Inserted data should match hardocded expected bits");
+        assert_eq!(
+            raw as u32, RAW_STORAGE,
+            "Inserted data should match hardocded expected bits"
+        );
     }
 
     #[test]
