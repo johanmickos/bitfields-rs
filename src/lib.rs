@@ -1,6 +1,4 @@
 //! Helpers for grouping together data in sub-byte bitfields.
-#![feature(try_from)]
-
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
