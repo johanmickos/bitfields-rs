@@ -1,6 +1,6 @@
 [package]
 name = "bitfields"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Johan Mickos <johan.mickos@gmail.com>"]
 description = "Helpers for storing sub-byte enums in primitive types."
 repository = "https://github.com/jarlopez/bitfields-rs"
